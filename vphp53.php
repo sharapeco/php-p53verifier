@@ -11,8 +11,12 @@ require_once 'Shaked/php.tools/src/Core/constants.php';
 require_once 'Shaked/php.tools/src/Core/FormatterPass.php';
 require_once 'Shaked/php.tools/src/Additionals/AdditionalPass.php';
 
+const VT_EMPTY_ARRAY = 'VT_EMPTY_ARRAY';
+const VT_BRACE_OPEN = '{';
+const VT_BRACE_CLOSE = '}';
+const VT_FUNCTION = 'VT_FUNCTION';
+
 final class P53Verifier extends AdditionalPass {
-	const EMPTY_ARRAY = 'ST_EMPTY_ARRAY';
 
 	private $errors = [];
 
@@ -20,37 +24,98 @@ final class P53Verifier extends AdditionalPass {
 		return $this->errors;
 	}
 
-	public function verify($source) {
+	public function verify($source, $debug = false) {
 		$this->tkns = token_get_all($source);
 
 		$currentLine = 0;
 		$contextStack = [];
+		$functionBrace = false;
+		$functionDepth = 0;
+
+		$prevStackDesc = null;
+
 		foreach ($this->tkns as $index => $token) {
 			list ($id, $text) = $this->getToken($token);
 			if (isset($token[2])) {
 				$currentLine = $token[2];
 			}
 			$this->ptr = $index;
+
+			if ($debug) {
+				$stackDesc = $this->printStack($contextStack);
+				if ($stackDesc !== $prevStackDesc) {
+					echo $stackDesc . "\n";
+					$prevStackDesc = $stackDesc;
+				}
+			}
+
 			switch ($id) {
+			case VT_BRACE_OPEN:
+				if ($functionBrace) {
+					$contextStack[] = VT_FUNCTION;
+					$functionDepth++;
+				} else {
+					$contextStack[] = VT_BRACE_OPEN;
+				}
+				$functionBrace = false;
+				break;
+			case VT_BRACE_CLOSE:
+				if (!isset($contextStack[0])) {
+					$this->errors[] = 'Missing brace';
+					return;
+				}
+				$start = array_pop($contextStack);
+				if ($start === VT_FUNCTION) {
+					$functionDepth--;
+				}
+				break;
 			case ST_BRACKET_OPEN:
-				$found = ST_BRACKET_OPEN;
 				if ($this->isShortArray()) {
 					$this->errors[] = ['Short array syntax []' , $currentLine];
 				}
-				$contextStack[] = $found;
+				$contextStack[] = ST_BRACKET_OPEN;
 				break;
 			case ST_BRACKET_CLOSE:
-				if (isset($contextStack[0]) && !$this->leftTokenIs(ST_BRACKET_OPEN)) {
+				if (!isset($contextStack[0])) {
+					$this->errors[] = 'Missing bracket';
+					return;
+				}
+				$start = array_pop($contextStack);
+				break;
+			case ST_PARENTHESES_OPEN:
+				if (isset($contextStack[0]) && T_ARRAY == end($contextStack) && $this->rightTokenIs(ST_PARENTHESES_CLOSE)) {
 					array_pop($contextStack);
+					$contextStack[] = VT_EMPTY_ARRAY;
+				} elseif (!$this->leftTokenIs([T_ARRAY, T_STRING])) {
+					$contextStack[] = ST_PARENTHESES_OPEN;
 				}
 				break;
+			case ST_PARENTHESES_CLOSE:
+				if (!isset($contextStack[0])) {
+					$this->errors[] = 'Missing parentheses';
+					return;
+				}
+				$start = array_pop($contextStack);
+				break;
+			case T_FUNCTION:
+				// 次に来る brace を function のものとする
+				$functionBrace = true;
+				break;
 			case T_STRING:
+				if ($text === 'self' && $functionDepth >= 2) {
+					$this->errors[] = ['Cannot access self:: in closure', $currentLine];
+				}
 				if ($this->rightTokenIs(ST_PARENTHESES_OPEN)) {
-					$contextStack[] = T_STRING;
+					$contextStack[] = $text; // T_STRING;
 				}
 				list ($isNew, $type) = $this->isNewIdentifier($text);
 				if ($isNew) {
 					$this->errors[] = [$type . ' ' . $text, $currentLine];
+				}
+				break;
+			case T_VARIABLE:
+				if ($text === '$this' && $functionDepth >= 2) {
+					$this->errors[] = ['Cannot access $this in closure', $currentLine];
 				}
 				break;
 			case T_ARRAY:
@@ -61,19 +126,6 @@ final class P53Verifier extends AdditionalPass {
 			case T_LNUMBER:
 				if (preg_match('/^0b/i', $text)) {
 					$this->errors[] = ['Binary integer literal', $currentLine];
-				}
-				break;
-			case ST_PARENTHESES_OPEN:
-				if (isset($contextStack[0]) && T_ARRAY == end($contextStack) && $this->rightTokenIs(ST_PARENTHESES_CLOSE)) {
-					array_pop($contextStack);
-					$contextStack[] = self::EMPTY_ARRAY;
-				} elseif (!$this->leftTokenIs([T_ARRAY, T_STRING])) {
-					$contextStack[] = ST_PARENTHESES_OPEN;
-				}
-				break;
-			case ST_PARENTHESES_CLOSE:
-				if (isset($contextStack[0])) {
-					array_pop($contextStack);
 				}
 				break;
 			case T_COALESCE:
@@ -109,6 +161,8 @@ final class P53Verifier extends AdditionalPass {
 		static $identifiers = [
 			['DateTimeImmutable', 'class'],
 			['DateTimeInterface', 'interface'],
+			['getimagesizefromstring', 'function'],
+			['http_response_code', 'function'],
 		];
 		foreach ($identifiers as list($id, $type)) {
 			if ($id === $text) {
@@ -116,6 +170,20 @@ final class P53Verifier extends AdditionalPass {
 			}
 		}
 		return [false, null];
+	}
+
+	public function printStack(array $stack) {
+		$stack = array_map(function($token) {
+			switch ($token) {
+			case T_FUNCTION: return 'FUNCTION';
+			case T_STRING: return 'STRING';
+			case T_VARIABLE: return 'VARIABLE';
+			case T_ARRAY: return 'ARRAY';
+			case T_LNUMBER: return 'NUMBER';
+			default: return $token;
+			}
+		}, $stack);
+		return implode(' > ', $stack);
 	}
 
 	/**
