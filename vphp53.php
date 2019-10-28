@@ -159,10 +159,59 @@ final class P53Verifier extends AdditionalPass {
 
 	public function isNewIdentifier($text) {
 		static $identifiers = [
+			// PHP 5.4
+			['CallbackFilterIterator', 'class'],
+			['JsonSerializable', 'interface'],
+			['RecursiveCallbackFilterIterator', 'class'],
+			['ReflectionZendExtension', 'class'],
+			['SessionHandler', 'class'],
+			['SessionHandlerInterface', 'interface'],
+			['get_declared_traits', 'function'],
+			['getimagesizefromstring', 'function'],
+			['header_register_callback', 'function'],
+			['hex2bin', 'function'],
+			['http_response_code', 'function'],
+			['imagewebp', 'function'],
+			['session_status', 'function'],
+			['session_register_shutdown', 'function'],
+			['socket_import_stream', 'function'],
+			['stream_set_chunk_size', 'function'],
+			['trait_exists', 'function'],
+
+			// PHP 5.5
+			['CURLFile', 'class'],
 			['DateTimeImmutable', 'class'],
 			['DateTimeInterface', 'interface'],
-			['getimagesizefromstring', 'function'],
-			['http_response_code', 'function'],
+			['array_column', 'function'],
+			['boolval', 'function'],
+			['json_last_error_msg', 'function'],
+			['password_get_info', 'function'],
+			['password_hash', 'function'],
+			['password_needs_rehash', 'function'],
+			['password_verify', 'function'],
+			['class_uses', 'function'],
+			['curl_escape', 'function'],
+			['curl_file_create', 'function'],
+			['curl_multi_setopt', 'function'],
+			['curl_multi_strerror', 'function'],
+			['curl_pause', 'function'],
+			['curl_reset', 'function'],
+			['curl_share_close', 'function'],
+			['curl_share_init', 'function'],
+			['curl_share_setopt', 'function'],
+			['curl_strerror', 'function'],
+			['curl_unescape', 'function'],
+			['imageaffinematrixconcat', 'function'],
+			['imageaffinematrixget', 'function'],
+			['imagecrop', 'function'],
+			['imagecropauto', 'function'],
+			['imageflip', 'function'],
+			['imagepalettetotruecolor', 'function'],
+			['imagescale', 'function'],
+
+			// PHP 5.6
+			['session_abort', 'function'],
+			['session_reset', 'function'],
 		];
 		foreach ($identifiers as list($id, $type)) {
 			if ($id === $text) {
